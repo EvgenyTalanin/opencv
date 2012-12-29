@@ -201,9 +201,6 @@ namespace cv
                 perimeter = 0;
                 q1 = 0; q2 = 0; q3 = 0;
 
-                //int crossings[rectFilled.height];
-                //memset(&crossings[0], 0, 4 * rectFilled.height);
-
                 int crossings[bwImage.rows];
                 memset(&crossings[0], 0, 4 * bwImage.rows);
 
@@ -261,8 +258,6 @@ namespace cv
 
                 Region _r(seedPoint, Rect(rectFilled.x - 1, rectFilled.y - 1, rectFilled.width, rectFilled.height), pixelsFilled, perimeter, q1, &crossings[0], bwImage.rows);
                 retval.insert(_r);
-
-                //Region(Point _s, Rect _b, int _a, int _p, int _e, int* _c, int h)
 
                 floodFill(bwImage, seedPoint, zeroScalar);
 
