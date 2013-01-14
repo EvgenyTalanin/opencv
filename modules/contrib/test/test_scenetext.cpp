@@ -8,6 +8,7 @@ using namespace std;
 TEST(Contrib_Matas, regression)
 {
     string imgName = "../opencv/samples/cpp/matas/incorrect640.jpg";
+    //imgName = "../opencv/samples/cpp/matas/ontario_small.jpg";
     Mat im = imread(imgName);
 
     set<Region, RegionComp> t;

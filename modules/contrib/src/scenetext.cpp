@@ -146,11 +146,6 @@ namespace cv
     {
         double t = (double)getTickCount();
 
-        Mat originalImage(_originalImage.rows + 2, _originalImage.cols + 2, _originalImage.type());
-        copyMakeBorder(_originalImage, originalImage, 1, 1, 1, 1, BORDER_CONSTANT, Scalar(255, 255, 255));
-
-        Mat bwImage(originalImage.size(), CV_8UC1);
-
         uchar thresholdValue = 100;
         uchar maxValue = 255;
         uchar middleValue = 192;
@@ -164,8 +159,11 @@ namespace cv
         int di, rx, ry;
         int perimeter;
 
-        cvtColor(originalImage, bwImage, CV_RGB2GRAY);
-        threshold(bwImage, bwImage, thresholdValue, maxValue, THRESH_BINARY_INV);
+        Mat _bwImage(_originalImage.size(), CV_8UC1);
+        cvtColor(_originalImage, _bwImage, CV_RGB2GRAY);
+        threshold(_bwImage, _bwImage, thresholdValue, maxValue, THRESH_BINARY_INV);
+        Mat bwImage(_bwImage.rows + 2, _bwImage.cols + 2, _bwImage.type());
+        copyMakeBorder(_bwImage, bwImage, 1, 1, 1, 1, BORDER_CONSTANT, Scalar(0, 0, 0));
 
         int regionsCount = 0;
         int totalPixelCount = bwImage.rows * bwImage.cols;
@@ -192,21 +190,15 @@ namespace cv
 
                 size_t pixelsFilled = floodFill(bwImage, seedPoint, middleScalar, &rectFilled);
 
-                ///printf("New region: %d\n", regionsCount);
-                // We use -1 here since image was expanded by 1 pixel
-                //printf("Start point: (%d; %d)\n", seedPoint.x - 1, seedPoint.y - 1);
-                ///printf("Area: %d\n", (int)pixelsFilled);
-                ///printf("Bounding box (%d; %d) + (%d; %d)\n", rectFilled.x - 1, rectFilled.y - 1, rectFilled.width, rectFilled.height);
-
                 perimeter = 0;
                 q1 = 0; q2 = 0; q3 = 0;
 
                 int crossings[bwImage.rows];
                 memset(&crossings[0], 0, 4 * bwImage.rows);
 
-                for(ry = rectFilled.y - 1; ry <= rectFilled.y + rectFilled.height; ry++)
+                for(ry = rectFilled.y; ry <= rectFilled.y + rectFilled.height; ry++)
                 {
-                    for(rx = rectFilled.x - 1; rx <= rectFilled.x + rectFilled.width; rx++)
+                    for(rx = rectFilled.x; rx <= rectFilled.x + rectFilled.width; rx++)
                     {
                         if ((bwImage.at<uint8_t>(ry, rx - 1) != bwImage.at<uint8_t>(ry, rx)) && (bwImage.at<uint8_t>(ry, rx - 1) + bwImage.at<uint8_t>(ry, rx) == middleValue + zeroValue))
                         {
@@ -228,9 +220,9 @@ namespace cv
                         }
 
                         p00 = bwImage.at<uint8_t>(ry, rx) == middleValue;
-                        p01 = bwImage.at<uint8_t>(ry, rx + 1) == middleValue;
-                        p10 = bwImage.at<uint8_t>(ry + 1, rx) == middleValue;
-                        p11 = bwImage.at<uint8_t>(ry + 1, rx + 1) == middleValue;
+                        p01 = bwImage.at<uint8_t>(ry, rx - 1) == middleValue;
+                        p10 = bwImage.at<uint8_t>(ry - 1, rx) == middleValue;
+                        p11 = bwImage.at<uint8_t>(ry - 1, rx - 1) == middleValue;
                         valuesSum = p00 + p01 + p10 + p11;
 
                         if (valuesSum == 1) q1++; else
@@ -242,19 +234,9 @@ namespace cv
                 q1 = q1 - q2 + 2 * q3;
                 if (q1 % 4 != 0)
                 {
-                    //printf("Non-integer Euler number");
                     exit(0);
                 }
                 q1 /= 4;
-
-                ///printf("Perimeter: %d\n", (int)perimeter);
-                ///printf("Euler number: %d\n", q1);
-                ///printf("Crossings: ");
-                ///for(int j = 0; j < rectFilled.height; j++)
-                ///{
-                //    printf("%d ", crossings[j]);
-                ///}
-                ///printf("\n=====\n\n");
 
                 Region _r(seedPoint, Rect(rectFilled.x - 1, rectFilled.y - 1, rectFilled.width, rectFilled.height), pixelsFilled, perimeter, q1, &crossings[0], bwImage.rows);
                 retval.insert(_r);
@@ -266,7 +248,7 @@ namespace cv
         }
 
         t = (double)getTickCount() - t;
-        //printf("Working time: %g ms\n", t * 1000. / getTickFrequency());
+        cout << "Working time: " << t * 1000. / getTickFrequency() << " ms" << endl;
 
         return retval;
     }
@@ -586,7 +568,7 @@ namespace cv
             }
         }
 
-        //printf("Working time: %g ms\n", t * 1000. / getTickFrequency());
+        cout << "Working time: " << t * 1000. / getTickFrequency() << "ms" << endl;
 
         return retval;
     }
