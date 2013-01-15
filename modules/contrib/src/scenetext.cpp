@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <stdlib.h>
+#include <limits.h>
 
 using namespace cv;
 using namespace std;
@@ -67,12 +68,28 @@ namespace cv
         }
     }
 
-    void Region::CorrectEuler(int _delta)
+    void Region1D::Attach(Region1D* _extra, int _borderLength, int _p0y, int _hn)
+    {
+        if (start != _extra->start)
+        {
+            bounds |= _extra->bounds;
+            area += _extra->area;
+            perimeter += _extra->perimeter - 2 * _borderLength;
+            euler += _extra->euler;
+            for(int i = bounds.y; i < bounds.y + bounds.height; i++)
+            {
+                crossings[i] += _extra->crossings[i];
+            }
+            crossings[_p0y] -= 2 * _hn;
+        }
+    }
+
+    void RegionBase::CorrectEuler(int _delta)
     {
         euler += _delta;
     }
 
-    Rect Region::Bounds()
+    Rect RegionBase::Bounds()
     {
         return bounds;
     }
@@ -82,37 +99,42 @@ namespace cv
         return start;
     }
 
-    int Region::Area()
+    unsigned Region1D::Start()
+    {
+        return start;
+    }
+
+    int RegionBase::Area()
     {
         return area;
     }
 
-    int Region::Perimeter()
+    int RegionBase::Perimeter()
     {
         return perimeter;
     }
 
-    int Region::Euler()
+    int RegionBase::Euler()
     {
         return euler;
     }
 
-    int Region::Crossings(int _y)
+    int RegionBase::Crossings(int _y)
     {
         return crossings[_y];
     }
 
-    int* Region::AllCrossings()
+    int* RegionBase::AllCrossings()
     {
         return crossings;
     }
 
-    int Region::CrossingsCount()
+    int RegionBase::CrossingsCount()
     {
         return imageh;
     }
 
-    int Region::BoundsArea()
+    int RegionBase::BoundsArea()
     {
         return bounds.width * bounds.height;
     }
@@ -130,6 +152,50 @@ namespace cv
         }
         return _x;
     }
+
+    Region1D::Region1D(unsigned _p, int h, int w)
+    {
+        start = _p;
+        bounds.x = _p % w;
+        bounds.y = _p / w;
+        bounds.width = 1;
+        bounds.height = 1;
+        area = 1;
+        perimeter = 4;
+        euler = 0;
+        imageh = h;
+        crossings = new int[imageh + 1];
+        memset(crossings, 0, imageh * 4);
+        crossings[_p / w] = 2;
+    }
+
+    Region1D::Region1D(unsigned _s, Rect _b, int _a, int _p, int _e, int* _c, int h)
+    {
+        start = _s;
+        bounds = _b;
+        area = _a;
+        perimeter = _p;
+        euler = _e;
+        imageh = h;
+        crossings = new int[imageh + 1];
+        memset(crossings, 0, imageh * 4);
+        memcpy(crossings, _c, _b.height * 4);
+    }
+
+    unsigned* SceneTextLocalizer::uf_Find1D(unsigned* _x, unsigned* _parents)
+    {
+        static unsigned stub = UINT_MAX;
+        if (_parents[*_x] == stub)
+        {
+            return &stub;
+        }
+        while(_parents[*_x] != *_x)
+        {
+            _x = &_parents[*_x];
+        }
+        return _x;
+    }
+
 
     SceneTextLocalizer::SceneTextLocalizer()
     {
@@ -262,9 +328,6 @@ namespace cv
 
         Mat bwImage(originalImage.size(), CV_8UC1);
 
-        vector<Point> pointLevels[256];
-        Point pc;
-
         static int neighborsCount = 4;
         static int dx[] = {-1,  0, 0, 1};
         static int dy[] = { 0, -1, 1, 0};
@@ -274,34 +337,33 @@ namespace cv
 
         cvtColor(originalImage, bwImage, CV_RGB2GRAY);
 
-        int** ranksArray;
-        ranksArray = new int*[bwImage.cols];
-        for(i = 0; i < bwImage.cols; i++)
+        int ibins = 256;
+        int histSize[] = { ibins };
+        float iranges[] = { 0, 256 };
+        const float* ranges[] = { iranges };
+        MatND hist;
+        int channels[] = { 0 };
+        calcHist(&bwImage, 1, channels, Mat(), hist, 1, histSize, ranges, true, false);
+
+        long nextIndexes[ibins];
+        unsigned* sortedPoints = new unsigned[bwImage.rows * bwImage.cols];
+        nextIndexes[0] = 0;
+
+        for(int hi=1; hi<ibins; hi++)
         {
-            ranksArray[i] = new int[bwImage.rows];
+            nextIndexes[hi] = nextIndexes[hi-1] + (int)hist.at<float>(hi-1);
         }
 
-        static Point stub(-1, -1);
-        Point** parentsArray;
-        parentsArray = new Point*[bwImage.cols];
-        for(i = 0; i < bwImage.cols; i++)
-        {
-            parentsArray[i] = new Point[bwImage.rows];
-            std::fill(parentsArray[i], parentsArray[i] + bwImage.rows, stub);
-            /*
-            for(j = 0; j < bwImage.rows; j++)
-            {
-                parentsArray[i][j] = Point(-1, -1);
-            }
-            */
-        }
 
-        Region*** regionsArray;
-        regionsArray = new Region**[bwImage.cols];
-        for(i = 0; i < bwImage.cols; i++)
-        {
-            regionsArray[i] = new Region*[bwImage.rows]();
-        }
+
+        unsigned* ranksArray = new unsigned[bwImage.rows * bwImage.cols];
+
+        static unsigned stub = UINT_MAX;
+        unsigned* parentsArray = new unsigned[bwImage.rows * bwImage.cols];
+        std::fill(parentsArray, parentsArray + bwImage.rows * bwImage.cols, stub);
+
+        Region1D** regionsArray;
+        regionsArray = new Region1D*[bwImage.rows * bwImage.cols];
 
         // Filling pointLevels
         for(i = 0; i < bwImage.rows; i++)
@@ -309,9 +371,8 @@ namespace cv
             const uchar* bwImageRow = bwImage.ptr<uchar>(i);
             for(j = 0; j < bwImage.cols; j++)
             {
-                pc.x = j;
-                pc.y = i;
-                pointLevels[bwImageRow[j]].push_back(pc);
+                sortedPoints[nextIndexes[bwImageRow[j]]] = i * bwImage.cols + j;
+                nextIndexes[bwImageRow[j]]++;
             }
         }
 
@@ -328,26 +389,33 @@ namespace cv
         int q1 = 0, q2 = 0, q3 = 0;
         int q10 = 0, q20 = 0, q30 = 0;
         int qtemp = 0;
-        Point p0, p1, proot, p1root;
+        //Point p0, p1, proot, p1root;
         int point_rank, neighbor_rank;
         int x_new, y_new;
         int ddx, ddy;
         int npx, npy;
-        Point ptemp;
+
+        unsigned ptemp;
+        unsigned first_point_id;
+        unsigned p_new, p0, p1;
+        unsigned proot_p, p1root_p;
 
         for(thresh = thresh_start; thresh < thresh_end; thresh += thresh_step)
         {
-            for(k = 0; k < (int)pointLevels[thresh].size(); k++)
+            first_point_id = thresh == 0 ? 0 : nextIndexes[thresh - 1];
+            for(k = first_point_id; k < nextIndexes[thresh]; k++)
             {
-                p0 = pointLevels[thresh][k];
+                p0 = sortedPoints[k];
 
                 // Surely point when accessed for the first time is not in any region
                 // Setting parent, rank, creating region (uf_makeset)
-                parentsArray[p0.x][p0.y] = p0;
-                ranksArray[p0.x][p0.y] = 0;
+                parentsArray[p0] = p0;
+                ranksArray[p0] = 0;
 
-                regionsArray[p0.x][p0.y] = new Region(p0, originalImage.rows);
-                proot = p0;
+                //cout << "POI: " << p0 % bwImage.cols << " " << p0 / bwImage.rows << endl;
+
+                regionsArray[p0] = new Region1D(p0, bwImage.rows, bwImage.cols);
+                proot_p = p0;
 
                 changed = false;
                 is_any_neighbor[1][1] = false;
@@ -361,9 +429,8 @@ namespace cv
                     {
                         if ((ddx != 0) || (ddy != 0))
                         {
-                            ptemp.x = p0.x + ddx;
-                            ptemp.y = p0.y + ddy;
-                            is_any_neighbor[ddx+1][ddy+1] = uf_Find(&ptemp, parentsArray)->x != -1;
+                            ptemp = p0 + ddx + ddy * bwImage.cols;
+                            is_any_neighbor[ddx+1][ddy+1] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
                         }
 
                         if ((ddx >= 0) && (ddy >= 0))
@@ -412,8 +479,9 @@ namespace cv
 
                 for(di = 0; di < neighborsCount; di++)
                 {
-                    x_new = p0.x + dx[di];
-                    y_new = p0.y + dy[di];
+                    x_new = p0 % bwImage.cols + dx[di];
+                    y_new = p0 / bwImage.cols + dy[di];
+                    p_new = p0 + dx[di] + dy[di] * bwImage.cols;
 
                     // TODO: implement corresponding function?
                     if ((x_new < 0) || (y_new < 0) || (x_new >= originalImage.cols) || (y_new >= originalImage.rows))
@@ -423,22 +491,21 @@ namespace cv
 
                     if (changed)
                     {
-                        proot = *uf_Find(&p0, parentsArray);
+                        proot_p = *uf_Find1D(&p0, parentsArray);
                     }
 
                     // p1 is neighbor of point of interest
-                    p1.x = x_new;
-                    p1.y = y_new;
+                    p1 = p_new;
 
-                    if (parentsArray[p1.x][p1.y].x != -1)
+                    if (parentsArray[p1] != UINT_MAX)
                     {
                         // Entering here means that p1 belongs to some region since has a parent
                         // Will now find root
-                        p1root = *uf_Find(&p1, parentsArray);
+                        p1root_p = *uf_Find1D(&p1, parentsArray);
 
                         // Need to union. Three cases: rank1>rank2, rank1<rank2, rank1=rank2
-                        point_rank = ranksArray[p0.x][p0.y];
-                        neighbor_rank = ranksArray[p1root.x][p1root.y];
+                        point_rank = ranksArray[p0];
+                        neighbor_rank = ranksArray[p1root_p];
 
                         neighborsInRegions = 0;
                         horizontalNeighbors = 0;
@@ -449,9 +516,8 @@ namespace cv
                             {
                                 if ((ddx != 0) || (ddy != 0))
                                 {
-                                    ptemp.x = p0.x + ddx;
-                                    ptemp.y = p0.y + ddy;
-                                    is_good_neighbor[ddx+1][ddy+1] = *uf_Find(&ptemp, parentsArray) == p1root;
+                                    ptemp = p0 + ddx + ddy * bwImage.cols;
+                                    is_good_neighbor[ddx+1][ddy+1] = *uf_Find1D(&ptemp, parentsArray) == p1root_p;
 
                                     if (is_good_neighbor[ddx+1][ddy+1])
                                     {
@@ -469,40 +535,43 @@ namespace cv
                             }
                         }
 
+                        //cout << regionsArray[proot_p]->Start() << " " << regionsArray[proot_p]->Bounds().x << " " << regionsArray[proot_p]->Bounds().y << " " << regionsArray[proot_p]->Bounds().width << " " << regionsArray[proot_p]->Bounds().height << endl;
+                        //cout << regionsArray[p1root_p]->Start() << " " << regionsArray[p1root_p]->Bounds().x << " " << regionsArray[p1root_p]->Bounds().y << " " << regionsArray[p1root_p]->Bounds().width << " " << regionsArray[p1root_p]->Bounds().height << endl;
+
                         // uf_union
                         if (point_rank < neighbor_rank)
                         {
-                            parentsArray[proot.x][proot.y] = p1root;
-                            regionsArray[p1root.x][p1root.y]->Attach(regionsArray[proot.x][proot.y], neighborsInRegions, p0.y, horizontalNeighbors);
-                            if (proot != p1root)
+                            parentsArray[proot_p] = p1root_p;
+                            regionsArray[p1root_p]->Attach(regionsArray[proot_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
+                            if (proot_p != p1root_p)
                             {
                                 // TODO: check if smth is really erased
-                                delete regionsArray[proot.x][proot.y];
-                                regionsArray[proot.x][proot.y] = NULL;
+                                delete regionsArray[proot_p];
+                                regionsArray[proot_p] = NULL;
                                 changed = true;
                             }
                         }
                         else if (point_rank > neighbor_rank)
                         {
-                            parentsArray[p1root.x][p1root.y] = proot;
-                            regionsArray[proot.x][proot.y]->Attach(regionsArray[p1root.x][p1root.y], neighborsInRegions, p0.y, horizontalNeighbors);
-                            if (proot != p1root)
+                            parentsArray[p1root_p] = proot_p;
+                            regionsArray[proot_p]->Attach(regionsArray[p1root_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
+                            if (proot_p != p1root_p)
                             {
                                 // TODO: check if smth is really erased
-                                delete regionsArray[p1root.x][p1root.y];
-                                regionsArray[p1root.x][p1root.y] = NULL;
+                                delete regionsArray[p1root_p];
+                                regionsArray[p1root_p] = NULL;
                             }
                         }
                         else
                         {
-                            parentsArray[p1root.x][p1root.y] = proot;
-                            ranksArray[proot.x][proot.y]++;
-                            regionsArray[proot.x][proot.y]->Attach(regionsArray[p1root.x][p1root.y], neighborsInRegions, p0.y, horizontalNeighbors);
-                            if (proot != p1root)
+                            parentsArray[p1root_p] = proot_p;
+                            ranksArray[proot_p]++;
+                            regionsArray[proot_p]->Attach(regionsArray[p1root_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
+                            if (proot_p != p1root_p)
                             {
                                 // TODO: check if smth is really erased
-                                delete regionsArray[p1root.x][p1root.y];
-                                regionsArray[p1root.x][p1root.y] = NULL;
+                                delete regionsArray[p1root_p];
+                                regionsArray[p1root_p] = NULL;
                             }
                         }
                     }
@@ -512,8 +581,8 @@ namespace cv
                     }
                 }
 
-                ptemp = *uf_Find(&p0, parentsArray);
-                regionsArray[ptemp.x][ptemp.y]->CorrectEuler(qtemp);
+                ptemp = *uf_Find1D(&p0, parentsArray);
+                regionsArray[ptemp]->CorrectEuler(qtemp);
             }
             /*
             printf("Threshold: %d. Regions count: %ld.\n", thresh, regions.size());
@@ -533,38 +602,35 @@ namespace cv
         set<Region, RegionComp> retval;
 
         int regionsCount = 0;
-        for(i = 0; i < bwImage.cols; i++)
+        for(i = 0; i < bwImage.cols * bwImage.rows; i++)
         {
-            for(j = 0; j < bwImage.rows; j++)
+            if (regionsArray[i] != NULL)
             {
-                if (regionsArray[i][j] != NULL)
+                regionsCount++;
+                //rectangle(originalImage, regionsArray[i][j]->Bounds(), Scalar(0, 0, 0));
+
+                retval.insert(Region(Point(-1, -1),
+                                     Rect(regionsArray[i]->Bounds().x - 1, regionsArray[i]->Bounds().y - 1, regionsArray[i]->Bounds().width, regionsArray[i]->Bounds().height),
+                                     regionsArray[i]->Area(),
+                                     regionsArray[i]->Perimeter(),
+                                     regionsArray[i]->Euler(),
+                                     regionsArray[i]->AllCrossings(),
+                                     bwImage.rows));
+/*
+
+                cout << "New region: " << regionsCount << endl;
+                cout << "Area: " << regionsArray[i]->Area() << endl;
+                cout << "Bounding box " << regionsArray[i]->Bounds().x - 1 << " " << regionsArray[i]->Bounds().y - 1 << " " << regionsArray[i]->Bounds().width << " " << regionsArray[i]->Bounds().height << endl;
+                cout << "Perimeter: " << regionsArray[i]->Perimeter() << endl;
+                cout << "Euler number: " << regionsArray[i]->Euler() << endl;
+                cout << "Crossings: ";
+                for(int kk = regionsArray[i]->Bounds().y; kk < regionsArray[i]->Bounds().y + regionsArray[i]->Bounds().height; kk++)
                 {
-                    regionsCount++;
-                    //rectangle(originalImage, regionsArray[i][j]->Bounds(), Scalar(0, 0, 0));
-
-                    retval.insert(Region(stub,
-                                         Rect(regionsArray[i][j]->Bounds().x - 1, regionsArray[i][j]->Bounds().y - 1, regionsArray[i][j]->Bounds().width, regionsArray[i][j]->Bounds().height),
-                                         regionsArray[i][j]->Area(),
-                                         regionsArray[i][j]->Perimeter(),
-                                         regionsArray[i][j]->Euler(),
-                                         regionsArray[i][j]->AllCrossings(),
-                                         bwImage.rows));
-
-                    /*
-                    printf("New region: %d\n", regionsCount);
-                    printf("Area: %d\n", regionsArray[i][j]->Area());
-                    printf("Bounding box (%d; %d) + (%d; %d)\n", regionsArray[i][j]->Bounds().x - 1, regionsArray[i][j]->Bounds().y - 1, regionsArray[i][j]->Bounds().width, regionsArray[i][j]->Bounds().height);
-                    printf("Perimeter: %d\n", regionsArray[i][j]->Perimeter());
-                    printf("Euler number: %d\n", regionsArray[i][j]->Euler());
-                    printf("Crossings: ");
-                    for(int k = regionsArray[i][j]->Bounds().y; k < regionsArray[i][j]->Bounds().y + regionsArray[i][j]->Bounds().height; k++)
-                    {
-                        printf("%d ", regionsArray[i][j]->Crossings(k));
-                    }
-                    printf("\n");
-                    printf("=====\n\n");
-                    */
+                    cout << regionsArray[i]->Crossings(kk) << " ";
                 }
+                cout << endl;
+                cout << "=====" << endl << endl;
+*/
             }
         }
 

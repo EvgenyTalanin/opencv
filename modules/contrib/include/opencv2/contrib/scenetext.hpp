@@ -4,10 +4,9 @@ using namespace std;
 
 namespace cv
 {
-class Region
+class RegionBase
 {
-private:
-    Point start;
+protected:
     Rect bounds;
     int area;
     int perimeter;
@@ -16,14 +15,8 @@ private:
     int* crossings;
 
 public:
-    Region();
-    Region(Point, int);
-    Region(Point, Rect, int, int, int, int*, int);
-    ~Region();
-    void Attach(Region*, int, int, int);
     void CorrectEuler(int);
     Rect Bounds();
-    Point Start();
     int Area();
     int Perimeter();
     int Euler();
@@ -31,6 +24,30 @@ public:
     int* AllCrossings();
     int CrossingsCount();
     int BoundsArea();
+};
+
+class Region : public RegionBase
+{
+protected:
+    Point start;
+public:
+    Region();
+    Region(Point, int);
+    Region(Point, Rect, int, int, int, int*, int);
+    ~Region();
+    void Attach(Region*, int, int, int);
+    Point Start();
+};
+
+class Region1D : public Region
+{
+private:
+    unsigned start;
+public:
+    Region1D(unsigned, int, int);
+    Region1D(unsigned, Rect, int, int, int, int*, int);
+    void Attach(Region1D*, int, int, int);
+    unsigned Start();
 };
 
 struct RegionComp
@@ -55,6 +72,7 @@ private:
     Mat _originalImage;
     int threshValue;
     Point* uf_Find(Point*, Point**);
+    unsigned* uf_Find1D(unsigned*, unsigned*);
 public:
     SceneTextLocalizer();
     SceneTextLocalizer(Mat, int);
