@@ -382,14 +382,12 @@ namespace cv
         int thresh;
 
         bool changed = false;
-        bool is_good_neighbor[3][3];
         bool is_any_neighbor[3][3];
         is_any_neighbor[1][1] = false;
         int neighborsInRegions = 0, horizontalNeighbors = 0;
         int q1 = 0, q2 = 0, q3 = 0;
         int q10 = 0, q20 = 0, q30 = 0;
         int qtemp = 0;
-        //Point p0, p1, proot, p1root;
         int point_rank, neighbor_rank;
         int x_new, y_new;
         int ddx, ddy;
@@ -412,8 +410,6 @@ namespace cv
                 parentsArray[p0] = p0;
                 ranksArray[p0] = 0;
 
-                //cout << "POI: " << p0 % bwImage.cols << " " << p0 / bwImage.rows << endl;
-
                 regionsArray[p0] = new Region1D(p0, bwImage.rows, bwImage.cols);
                 proot_p = p0;
 
@@ -423,50 +419,141 @@ namespace cv
                 q10 = 0; q20 = 0; q30 = 0;
                 qtemp = 0;
 
-                for(ddx = -1; ddx <= 1; ddx++)
+                // other loop
+                // ddx=-1 ddy=-1
+                ptemp = p0 - 1 - bwImage.cols;
+                is_any_neighbor[0][0] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+
+                // ddx=-1 ddy=0
+                ptemp = p0 - 1;
+                is_any_neighbor[0][1] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+
+                // ddx=-1 ddy=1
+                ptemp = p0 - 1 + bwImage.cols;
+                is_any_neighbor[0][2] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+
+                // ddx=0 ddy=-1
+                ptemp = p0 - bwImage.cols;
+                is_any_neighbor[1][0] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+
+                // ddx=0 ddy=0
+                qtemp = is_any_neighbor[0][0] + is_any_neighbor[0][1] + is_any_neighbor[1][0] + is_any_neighbor[1][1];
+                if (qtemp == 0)
                 {
-                    for(ddy = -1; ddy <= 1; ddy++)
+                    q1++;
+                }
+                else if (qtemp == 1)
+                {
+                    q10++;
+                    if (is_any_neighbor[0][0])
                     {
-                        if ((ddx != 0) || (ddy != 0))
-                        {
-                            ptemp = p0 + ddx + ddy * bwImage.cols;
-                            is_any_neighbor[ddx+1][ddy+1] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
-                        }
-
-                        if ((ddx >= 0) && (ddy >= 0))
-                        {
-                            qtemp = is_any_neighbor[ddx+1][ddy+1] + is_any_neighbor[ddx+1][ddy] + is_any_neighbor[ddx][ddy+1] + is_any_neighbor[ddx][ddy];
-
-                            if (qtemp == 0)
-                            {
-                                q1++;
-                            }
-                            else if (qtemp == 1)
-                            {
-                                q10++;
-
-                                npx = ddx == 0 ? 0 : 2;
-                                npy = ddy == 0 ? 0 : 2;
-                                if (is_any_neighbor[npx][npy])
-                                {
-                                    q3++;
-                                }
-                            }
-                            else if (qtemp == 2)
-                            {
-                                if (is_any_neighbor[ddx+1][ddy+1] == is_any_neighbor[ddx][ddy])
-                                {
-                                    q30++;
-                                }
-                                q2++;
-                            }
-                            else if (qtemp == 3)
-                            {
-                                q20++;
-                            }
-                        }
+                        q3++;
                     }
                 }
+                else if (qtemp == 2)
+                {
+                    if (is_any_neighbor[1][1] == is_any_neighbor[0][0])
+                    {
+                        q30++;
+                    }
+                    q2++;
+                }
+                else if (qtemp == 3)
+                {
+                    q20++;
+                }
+
+                // ddx=0 ddy=1
+                ptemp = p0 + bwImage.cols;
+                is_any_neighbor[1][2] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                qtemp = is_any_neighbor[0][1] + is_any_neighbor[0][2] + is_any_neighbor[1][1] + is_any_neighbor[1][2];
+                if (qtemp == 0)
+                {
+                    q1++;
+                }
+                else if (qtemp == 1)
+                {
+                    q10++;
+                    if (is_any_neighbor[0][2])
+                    {
+                        q3++;
+                    }
+                }
+                else if (qtemp == 2)
+                {
+                    if (is_any_neighbor[1][2] == is_any_neighbor[0][1])
+                    {
+                        q30++;
+                    }
+                    q2++;
+                }
+                else if (qtemp == 3)
+                {
+                    q20++;
+                }
+
+                // ddx=1 ddy=-1
+                ptemp = p0 + 1 - bwImage.cols;
+                is_any_neighbor[2][0] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+
+                // ddx=1 ddy=0
+                ptemp = p0 + 1;
+                is_any_neighbor[2][1] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                qtemp = is_any_neighbor[1][0] + is_any_neighbor[1][1] + is_any_neighbor[2][0] + is_any_neighbor[2][1];
+                if (qtemp == 0)
+                {
+                    q1++;
+                }
+                else if (qtemp == 1)
+                {
+                    q10++;
+                    if (is_any_neighbor[2][0])
+                    {
+                        q3++;
+                    }
+                }
+                else if (qtemp == 2)
+                {
+                    if (is_any_neighbor[1][0] == is_any_neighbor[2][1])
+                    {
+                        q30++;
+                    }
+                    q2++;
+                }
+                else if (qtemp == 3)
+                {
+                    q20++;
+                }
+
+                // ddx=1 ddy=1
+                ptemp = p0 + 1 + bwImage.cols;
+                is_any_neighbor[2][2] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                qtemp = is_any_neighbor[1][1] + is_any_neighbor[1][2] + is_any_neighbor[2][1] + is_any_neighbor[2][2];
+                if (qtemp == 0)
+                {
+                    q1++;
+                }
+                else if (qtemp == 1)
+                {
+                    q10++;
+                    if (is_any_neighbor[2][2])
+                    {
+                        q3++;
+                    }
+                }
+                else if (qtemp == 2)
+                {
+                    if (is_any_neighbor[1][1] == is_any_neighbor[2][2])
+                    {
+                        q30++;
+                    }
+                    q2++;
+                }
+                else if (qtemp == 3)
+                {
+                    q20++;
+                }
+                // end loop
 
                 qtemp = (q1 - q2 + q3 * 2) - (q10 - q20 + q30 * 2);
 
@@ -510,33 +597,33 @@ namespace cv
                         neighborsInRegions = 0;
                         horizontalNeighbors = 0;
 
-                        for(ddx = -1; ddx <= 1; ddx++)
+                        // old 3*3 loop inline
+                        ptemp = p0 - 1;
+                        if (*uf_Find1D(&ptemp, parentsArray) == p1root_p)
                         {
-                            for(ddy = -1; ddy <= 1; ddy++)
-                            {
-                                if ((ddx != 0) || (ddy != 0))
-                                {
-                                    ptemp = p0 + ddx + ddy * bwImage.cols;
-                                    is_good_neighbor[ddx+1][ddy+1] = *uf_Find1D(&ptemp, parentsArray) == p1root_p;
-
-                                    if (is_good_neighbor[ddx+1][ddy+1])
-                                    {
-                                        if (ddy == 0)
-                                        {
-                                            horizontalNeighbors++;
-                                        }
-
-                                        if ((ddy == 0) || (ddx == 0))
-                                        {
-                                            neighborsInRegions++;
-                                        }
-                                    }
-                                }
-                            }
+                            horizontalNeighbors++;
+                            neighborsInRegions++;
                         }
 
-                        //cout << regionsArray[proot_p]->Start() << " " << regionsArray[proot_p]->Bounds().x << " " << regionsArray[proot_p]->Bounds().y << " " << regionsArray[proot_p]->Bounds().width << " " << regionsArray[proot_p]->Bounds().height << endl;
-                        //cout << regionsArray[p1root_p]->Start() << " " << regionsArray[p1root_p]->Bounds().x << " " << regionsArray[p1root_p]->Bounds().y << " " << regionsArray[p1root_p]->Bounds().width << " " << regionsArray[p1root_p]->Bounds().height << endl;
+                        ptemp = p0 + 1;
+                        if (*uf_Find1D(&ptemp, parentsArray) == p1root_p)
+                        {
+                            horizontalNeighbors++;
+                            neighborsInRegions++;
+                        }
+
+                        ptemp = p0 + bwImage.cols;
+                        if (*uf_Find1D(&ptemp, parentsArray) == p1root_p)
+                        {
+                            neighborsInRegions++;
+                        }
+
+                        ptemp = p0 - bwImage.cols;
+                        if (*uf_Find1D(&ptemp, parentsArray) == p1root_p)
+                        {
+                            neighborsInRegions++;
+                        }
+
 
                         // uf_union
                         if (point_rank < neighbor_rank)
