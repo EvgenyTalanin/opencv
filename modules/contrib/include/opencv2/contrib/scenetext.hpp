@@ -1,4 +1,6 @@
 #include <iostream>
+#define SMALL_SIZE 16
+#define SMALL_SIZE_MIDDLE 8
 
 using namespace std;
 
@@ -43,11 +45,16 @@ class Region1D : public Region
 {
 private:
     unsigned start;
+    unsigned top_of_small;
+    int crossings_small[SMALL_SIZE];
 public:
+    ~Region1D();
     Region1D(unsigned, int, int);
     Region1D(unsigned, Rect, int, int, int, int*, int);
     void Attach(Region1D*, int, int, int);
     unsigned Start();
+    int Crossings(int);
+    int* AllCrossings();
 };
 
 struct RegionComp

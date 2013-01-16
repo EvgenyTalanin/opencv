@@ -3,6 +3,7 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/contrib/contrib.hpp"
 #include "opencv2/contrib/scenetext.hpp"
+#include "opencv2/contrib/pool.hpp"
 
 #include <iostream>
 #include <stdlib.h>
@@ -76,11 +77,43 @@ namespace cv
             area += _extra->area;
             perimeter += _extra->perimeter - 2 * _borderLength;
             euler += _extra->euler;
-            for(int i = bounds.y; i < bounds.y + bounds.height; i++)
+
+            if ((bounds.height > SMALL_SIZE) || (bounds.y <= top_of_small) || (bounds.y + bounds.height >= top_of_small + SMALL_SIZE))
             {
-                crossings[i] += _extra->crossings[i];
+                if (top_of_small != UINT_MAX)
+                {
+                    crossings = new int[imageh];
+                    memset(crossings, 0, imageh * 4);
+
+                    memcpy(&crossings[top_of_small], &crossings_small[0], SMALL_SIZE * 4);
+                    /*
+                    for(int ii = 0; ii < SMALL_SIZE; ii++)
+                    {
+                        cout << top_of_small + ii << " " << crossings[top_of_small + ii] << endl;
+                        crossings[top_of_small + ii] = crossings_small[ii];
+                    }
+                    */
+
+                    top_of_small = UINT_MAX;
+                }
             }
-            crossings[_p0y] -= 2 * _hn;
+
+            if (top_of_small != UINT_MAX)
+            {
+                for(int i = bounds.y; i < bounds.y + bounds.height; i++)
+                {
+                    crossings_small[i - top_of_small] += _extra->Crossings(i);
+                }
+                crossings_small[_p0y - top_of_small] -= 2 * _hn;
+            }
+            else
+            {
+                for(int i = bounds.y; i < bounds.y + bounds.height; i++)
+                {
+                    crossings[i] += _extra->Crossings(i);
+                }
+                crossings[_p0y] -= 2 * _hn;
+            }
         }
     }
 
@@ -163,10 +196,26 @@ namespace cv
         area = 1;
         perimeter = 4;
         euler = 0;
-        imageh = h;
+        imageh = h;       
+        /*
         crossings = new int[imageh + 1];
         memset(crossings, 0, imageh * 4);
         crossings[_p / w] = 2;
+        */
+        crossings = NULL;
+
+        memset(&crossings_small[0], 0, SMALL_SIZE * 4);
+
+        top_of_small = bounds.y - SMALL_SIZE_MIDDLE;
+        if (bounds.y < SMALL_SIZE_MIDDLE)
+        {
+            top_of_small = 0;
+        }
+        if (top_of_small + SMALL_SIZE > imageh)
+        {
+            top_of_small = imageh - SMALL_SIZE;
+        }
+        crossings_small[bounds.y - top_of_small] = 2;
     }
 
     Region1D::Region1D(unsigned _s, Rect _b, int _a, int _p, int _e, int* _c, int h)
@@ -180,6 +229,45 @@ namespace cv
         crossings = new int[imageh + 1];
         memset(crossings, 0, imageh * 4);
         memcpy(crossings, _c, _b.height * 4);
+    }
+
+    int Region1D::Crossings(int _y)
+    {
+        if (top_of_small != UINT_MAX)
+        {
+            if ((_y >= bounds.y) && (_y <= bounds.y + bounds.height - 1))
+            {
+                return crossings_small[_y - top_of_small];
+            }
+            else
+            {
+                return 0;
+            }
+        }
+        else
+        {
+            return crossings[_y];
+        }
+    }
+
+    int* Region1D::AllCrossings()
+    {
+        if (top_of_small != UINT_MAX)
+        {
+            crossings = new int[imageh + 1];
+            memset(crossings, 0, imageh * 4);
+            memcpy(&crossings[top_of_small], &crossings_small[0], SMALL_SIZE * 4);
+            top_of_small = UINT_MAX;
+        }
+        return crossings;
+    }
+
+    Region1D::~Region1D()
+    {
+        if (top_of_small == UINT_MAX)
+        {
+            delete[] crossings;
+        }
     }
 
     unsigned* SceneTextLocalizer::uf_Find1D(unsigned* _x, unsigned* _parents)
@@ -337,24 +425,30 @@ namespace cv
 
         cvtColor(originalImage, bwImage, CV_RGB2GRAY);
 
-        int ibins = 256;
-        int histSize[] = { ibins };
-        float iranges[] = { 0, 256 };
-        const float* ranges[] = { iranges };
-        MatND hist;
-        int channels[] = { 0 };
-        calcHist(&bwImage, 1, channels, Mat(), hist, 1, histSize, ranges, true, false);
+        static int thresh_start = 0;
+        static int thresh_end = 101;
+        static int thresh_step = 1; // see "FEATURE" comments
+
+        // FEATURE: change ibins to ibins / thresh_step and add some memset
+        const int ibins = 256;
+        unsigned hist[ibins] = { 0 };
+        for(i = 0; i < bwImage.rows; i++)
+        {
+            const uchar* bwImageRow = bwImage.ptr<uchar>(i);
+            for(j = 0; j < bwImage.cols; j++)
+            {
+                // FEATURE: change bwImageRow[j] to bwImageRow[j] / thresh_step in the next line
+                hist[bwImageRow[j]]++;
+            }
+        }
 
         long nextIndexes[ibins];
         unsigned* sortedPoints = new unsigned[bwImage.rows * bwImage.cols];
         nextIndexes[0] = 0;
-
         for(int hi=1; hi<ibins; hi++)
         {
-            nextIndexes[hi] = nextIndexes[hi-1] + (int)hist.at<float>(hi-1);
+            nextIndexes[hi] = nextIndexes[hi-1] + hist[hi-1];
         }
-
-
 
         unsigned* ranksArray = new unsigned[bwImage.rows * bwImage.cols];
 
@@ -364,21 +458,19 @@ namespace cv
 
         Region1D** regionsArray;
         regionsArray = new Region1D*[bwImage.rows * bwImage.cols];
+        memset(&regionsArray[0], NULL, bwImage.rows * bwImage.cols * sizeof(Region1D*));
 
-        // Filling pointLevels
         for(i = 0; i < bwImage.rows; i++)
         {
             const uchar* bwImageRow = bwImage.ptr<uchar>(i);
             for(j = 0; j < bwImage.cols; j++)
             {
+                // FEATURE: change bwImageRow[j] to bwImageRow[j] / thresh_step in the next two lines
                 sortedPoints[nextIndexes[bwImageRow[j]]] = i * bwImage.cols + j;
                 nextIndexes[bwImageRow[j]]++;
             }
         }
 
-        static int thresh_start = 0;
-        static int thresh_end = 101;
-        static int thresh_step = 1;
         int thresh;
 
         bool changed = false;
@@ -390,8 +482,6 @@ namespace cv
         int qtemp = 0;
         int point_rank, neighbor_rank;
         int x_new, y_new;
-        int ddx, ddy;
-        int npx, npy;
 
         unsigned ptemp;
         unsigned first_point_id;
@@ -671,17 +761,6 @@ namespace cv
                 ptemp = *uf_Find1D(&p0, parentsArray);
                 regionsArray[ptemp]->CorrectEuler(qtemp);
             }
-            /*
-            printf("Threshold: %d. Regions count: %ld.\n", thresh, regions.size());
-            for(map<Point, Region, PointComp>::iterator it = regions.begin(); it != regions.end(); it++)
-            {
-                if (it->second.Area2() > 100)
-                {
-                    //printf("Region bounds: %d %d %d %d\n", it->second.Bounds().x, it->second.Bounds().y, it->second.Bounds().width, it->second.Bounds().height);
-                    rectangle(bwImage, it->second.Bounds(), Scalar(0, 0, 0));
-                }
-            }
-            */
         }
 
         t = (double)getTickCount() - t;
@@ -703,8 +782,8 @@ namespace cv
                                      regionsArray[i]->Euler(),
                                      regionsArray[i]->AllCrossings(),
                                      bwImage.rows));
-/*
 
+/*
                 cout << "New region: " << regionsCount << endl;
                 cout << "Area: " << regionsArray[i]->Area() << endl;
                 cout << "Bounding box " << regionsArray[i]->Bounds().x - 1 << " " << regionsArray[i]->Bounds().y - 1 << " " << regionsArray[i]->Bounds().width << " " << regionsArray[i]->Bounds().height << endl;
@@ -721,7 +800,7 @@ namespace cv
             }
         }
 
-        cout << "Working time: " << t * 1000. / getTickFrequency() << "ms" << endl;
+        cout << "Working time: " << t * 1000. / getTickFrequency() << " ms" << endl;
 
         return retval;
     }
