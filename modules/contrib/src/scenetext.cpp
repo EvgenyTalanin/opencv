@@ -3,7 +3,6 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/contrib/contrib.hpp"
 #include "opencv2/contrib/scenetext.hpp"
-#include "opencv2/contrib/pool.hpp"
 
 #include <iostream>
 #include <stdlib.h>
@@ -84,16 +83,7 @@ namespace cv
                 {
                     crossings = new int[imageh];
                     memset(crossings, 0, imageh * 4);
-
                     memcpy(&crossings[top_of_small], &crossings_small[0], SMALL_SIZE * 4);
-                    /*
-                    for(int ii = 0; ii < SMALL_SIZE; ii++)
-                    {
-                        cout << top_of_small + ii << " " << crossings[top_of_small + ii] << endl;
-                        crossings[top_of_small + ii] = crossings_small[ii];
-                    }
-                    */
-
                     top_of_small = UINT_MAX;
                 }
             }
@@ -196,12 +186,7 @@ namespace cv
         area = 1;
         perimeter = 4;
         euler = 0;
-        imageh = h;       
-        /*
-        crossings = new int[imageh + 1];
-        memset(crossings, 0, imageh * 4);
-        crossings[_p / w] = 2;
-        */
+        imageh = h;
         crossings = NULL;
 
         memset(&crossings_small[0], 0, SMALL_SIZE * 4);
@@ -272,16 +257,13 @@ namespace cv
 
     unsigned* SceneTextLocalizer::uf_Find1D(unsigned* _x, unsigned* _parents)
     {
-        static unsigned stub = UINT_MAX;
-        if (_parents[*_x] == stub)
-        {
-            return &stub;
-        }
-        while(_parents[*_x] != *_x)
+        // UINT_MAX means stub
+        // UINT_MAX-1 means that point is root of some region
+        while(_parents[*_x] < UINT_MAX - 1)
         {
             _x = &_parents[*_x];
         }
-        return _x;
+        return _parents[*_x] == UINT_MAX ? &_parents[*_x] : _x;
     }
 
 
@@ -458,7 +440,11 @@ namespace cv
 
         Region1D** regionsArray;
         regionsArray = new Region1D*[bwImage.rows * bwImage.cols];
-        memset(&regionsArray[0], NULL, bwImage.rows * bwImage.cols * sizeof(Region1D*));
+        for(i = 0; i < bwImage.rows * bwImage.cols; i++)
+        {
+            regionsArray[i] = NULL;
+        }
+        //memset(&regionsArray[0], 0, bwImage.rows * bwImage.cols * sizeof(Region1D*));
 
         for(i = 0; i < bwImage.rows; i++)
         {
@@ -497,7 +483,7 @@ namespace cv
 
                 // Surely point when accessed for the first time is not in any region
                 // Setting parent, rank, creating region (uf_makeset)
-                parentsArray[p0] = p0;
+                parentsArray[p0] = UINT_MAX - 1;
                 ranksArray[p0] = 0;
 
                 regionsArray[p0] = new Region1D(p0, bwImage.rows, bwImage.cols);
@@ -527,7 +513,7 @@ namespace cv
                 is_any_neighbor[1][0] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
 
                 // ddx=0 ddy=0
-                qtemp = is_any_neighbor[0][0] + is_any_neighbor[0][1] + is_any_neighbor[1][0] + is_any_neighbor[1][1];
+                qtemp = is_any_neighbor[0][0] + is_any_neighbor[0][1] + is_any_neighbor[1][0]; // + is_any_neighbor[1][1] == false
                 if (qtemp == 0)
                 {
                     q1++;
@@ -556,7 +542,7 @@ namespace cv
                 // ddx=0 ddy=1
                 ptemp = p0 + bwImage.cols;
                 is_any_neighbor[1][2] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
-                qtemp = is_any_neighbor[0][1] + is_any_neighbor[0][2] + is_any_neighbor[1][1] + is_any_neighbor[1][2];
+                qtemp = is_any_neighbor[0][1] + is_any_neighbor[0][2] + is_any_neighbor[1][2]; // + is_any_neighbor[1][1] == false
                 if (qtemp == 0)
                 {
                     q1++;
@@ -589,7 +575,7 @@ namespace cv
                 // ddx=1 ddy=0
                 ptemp = p0 + 1;
                 is_any_neighbor[2][1] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
-                qtemp = is_any_neighbor[1][0] + is_any_neighbor[1][1] + is_any_neighbor[2][0] + is_any_neighbor[2][1];
+                qtemp = is_any_neighbor[1][0] + is_any_neighbor[2][0] + is_any_neighbor[2][1]; // + is_any_neighbor[1][1] == false
                 if (qtemp == 0)
                 {
                     q1++;
@@ -618,7 +604,7 @@ namespace cv
                 // ddx=1 ddy=1
                 ptemp = p0 + 1 + bwImage.cols;
                 is_any_neighbor[2][2] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
-                qtemp = is_any_neighbor[1][1] + is_any_neighbor[1][2] + is_any_neighbor[2][1] + is_any_neighbor[2][2];
+                qtemp = is_any_neighbor[1][2] + is_any_neighbor[2][1] + is_any_neighbor[2][2]; // + is_any_neighbor[1][1] == false
                 if (qtemp == 0)
                 {
                     q1++;
@@ -673,12 +659,12 @@ namespace cv
 
                     // p1 is neighbor of point of interest
                     p1 = p_new;
+                    p1root_p = *uf_Find1D(&p1, parentsArray);
 
-                    if (parentsArray[p1] != UINT_MAX)
+                    if ((parentsArray[p1] != UINT_MAX) && (p1root_p != proot_p))
                     {
                         // Entering here means that p1 belongs to some region since has a parent
                         // Will now find root
-                        p1root_p = *uf_Find1D(&p1, parentsArray);
 
                         // Need to union. Three cases: rank1>rank2, rank1<rank2, rank1=rank2
                         point_rank = ranksArray[p0];
@@ -714,42 +700,29 @@ namespace cv
                             neighborsInRegions++;
                         }
 
-
                         // uf_union
                         if (point_rank < neighbor_rank)
                         {
                             parentsArray[proot_p] = p1root_p;
                             regionsArray[p1root_p]->Attach(regionsArray[proot_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
-                            if (proot_p != p1root_p)
-                            {
-                                // TODO: check if smth is really erased
-                                delete regionsArray[proot_p];
-                                regionsArray[proot_p] = NULL;
-                                changed = true;
-                            }
+                            delete regionsArray[proot_p];
+                            regionsArray[proot_p] = NULL;
+                            changed = true;
                         }
                         else if (point_rank > neighbor_rank)
                         {
                             parentsArray[p1root_p] = proot_p;
                             regionsArray[proot_p]->Attach(regionsArray[p1root_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
-                            if (proot_p != p1root_p)
-                            {
-                                // TODO: check if smth is really erased
-                                delete regionsArray[p1root_p];
-                                regionsArray[p1root_p] = NULL;
-                            }
+                            delete regionsArray[p1root_p];
+                            regionsArray[p1root_p] = NULL;
                         }
                         else
                         {
                             parentsArray[p1root_p] = proot_p;
                             ranksArray[proot_p]++;
                             regionsArray[proot_p]->Attach(regionsArray[p1root_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
-                            if (proot_p != p1root_p)
-                            {
-                                // TODO: check if smth is really erased
-                                delete regionsArray[p1root_p];
-                                regionsArray[p1root_p] = NULL;
-                            }
+                            delete regionsArray[p1root_p];
+                            regionsArray[p1root_p] = NULL;
                         }
                     }
                     else
@@ -757,7 +730,6 @@ namespace cv
                         // Neighbor not in region. Doing nothing
                     }
                 }
-
                 ptemp = *uf_Find1D(&p0, parentsArray);
                 regionsArray[ptemp]->CorrectEuler(qtemp);
             }
