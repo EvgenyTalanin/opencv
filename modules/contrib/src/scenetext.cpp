@@ -69,7 +69,7 @@ namespace cv
     }
 
     void Region1D::Attach(Region1D* _extra, int _borderLength, int _p0y, int _hn)
-    {
+    {      
         if (start != _extra->start)
         {
             bounds |= _extra->bounds;
@@ -84,6 +84,7 @@ namespace cv
                     crossings = new int[imageh];
                     memset(crossings, 0, imageh * 4);
                     memcpy(&crossings[top_of_small], &crossings_small[0], SMALL_SIZE * 4);
+
                     top_of_small = UINT_MAX;
                 }
             }
@@ -216,7 +217,7 @@ namespace cv
         memcpy(crossings, _c, _b.height * 4);
     }
 
-    int Region1D::Crossings(int _y)
+    inline int Region1D::Crossings(int _y)
     {
         if (top_of_small != UINT_MAX)
         {
@@ -251,11 +252,11 @@ namespace cv
     {
         if (top_of_small == UINT_MAX)
         {
-            delete[] crossings;
+          delete[] crossings;
         }
     }
 
-    unsigned* SceneTextLocalizer::uf_Find1D(unsigned* _x, unsigned* _parents)
+    inline unsigned* SceneTextLocalizer::uf_Find1D(unsigned* _x, unsigned* _parents)
     {
         // UINT_MAX means stub
         // UINT_MAX-1 means that point is root of some region
@@ -264,6 +265,15 @@ namespace cv
             _x = &_parents[*_x];
         }
         return _parents[*_x] == UINT_MAX ? &_parents[*_x] : _x;
+    }
+
+    inline bool SceneTextLocalizer::uf_CheckStub(unsigned* _x, unsigned* _parents)
+    {
+        while(_parents[*_x] < UINT_MAX - 1)
+        {
+            _x = &_parents[*_x];
+        }
+        return _parents[*_x] != UINT_MAX;
     }
 
 
@@ -498,19 +508,19 @@ namespace cv
                 // other loop
                 // ddx=-1 ddy=-1
                 ptemp = p0 - 1 - bwImage.cols;
-                is_any_neighbor[0][0] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                is_any_neighbor[0][0] = uf_CheckStub(&ptemp, parentsArray);
 
                 // ddx=-1 ddy=0
                 ptemp = p0 - 1;
-                is_any_neighbor[0][1] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                is_any_neighbor[0][1] = uf_CheckStub(&ptemp, parentsArray);
 
                 // ddx=-1 ddy=1
                 ptemp = p0 - 1 + bwImage.cols;
-                is_any_neighbor[0][2] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                is_any_neighbor[0][2] = uf_CheckStub(&ptemp, parentsArray);
 
                 // ddx=0 ddy=-1
                 ptemp = p0 - bwImage.cols;
-                is_any_neighbor[1][0] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                is_any_neighbor[1][0] = uf_CheckStub(&ptemp, parentsArray);
 
                 // ddx=0 ddy=0
                 qtemp = is_any_neighbor[0][0] + is_any_neighbor[0][1] + is_any_neighbor[1][0]; // + is_any_neighbor[1][1] == false
@@ -528,7 +538,7 @@ namespace cv
                 }
                 else if (qtemp == 2)
                 {
-                    if (is_any_neighbor[1][1] == is_any_neighbor[0][0])
+                    if (!is_any_neighbor[0][0]) // is_any_neighbor[1][1] == false
                     {
                         q30++;
                     }
@@ -541,7 +551,7 @@ namespace cv
 
                 // ddx=0 ddy=1
                 ptemp = p0 + bwImage.cols;
-                is_any_neighbor[1][2] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                is_any_neighbor[1][2] = uf_CheckStub(&ptemp, parentsArray);
                 qtemp = is_any_neighbor[0][1] + is_any_neighbor[0][2] + is_any_neighbor[1][2]; // + is_any_neighbor[1][1] == false
                 if (qtemp == 0)
                 {
@@ -570,11 +580,11 @@ namespace cv
 
                 // ddx=1 ddy=-1
                 ptemp = p0 + 1 - bwImage.cols;
-                is_any_neighbor[2][0] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                is_any_neighbor[2][0] = uf_CheckStub(&ptemp, parentsArray);
 
                 // ddx=1 ddy=0
                 ptemp = p0 + 1;
-                is_any_neighbor[2][1] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                is_any_neighbor[2][1] = uf_CheckStub(&ptemp, parentsArray);
                 qtemp = is_any_neighbor[1][0] + is_any_neighbor[2][0] + is_any_neighbor[2][1]; // + is_any_neighbor[1][1] == false
                 if (qtemp == 0)
                 {
@@ -603,7 +613,7 @@ namespace cv
 
                 // ddx=1 ddy=1
                 ptemp = p0 + 1 + bwImage.cols;
-                is_any_neighbor[2][2] = *uf_Find1D(&ptemp, parentsArray) != UINT_MAX;
+                is_any_neighbor[2][2] = uf_CheckStub(&ptemp, parentsArray);
                 qtemp = is_any_neighbor[1][2] + is_any_neighbor[2][1] + is_any_neighbor[2][2]; // + is_any_neighbor[1][1] == false
                 if (qtemp == 0)
                 {
@@ -619,7 +629,7 @@ namespace cv
                 }
                 else if (qtemp == 2)
                 {
-                    if (is_any_neighbor[1][1] == is_any_neighbor[2][2])
+                    if (!is_any_neighbor[2][2]) // is_any_neighbor[1][1] == false
                     {
                         q30++;
                     }

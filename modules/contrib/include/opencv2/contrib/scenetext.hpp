@@ -53,7 +53,7 @@ public:
     Region1D(unsigned, Rect, int, int, int, int*, int);
     void Attach(Region1D*, int, int, int);
     unsigned Start();
-    int Crossings(int);
+    inline int Crossings(int);
     int* AllCrossings();
 };
 
@@ -79,7 +79,8 @@ private:
     Mat _originalImage;
     int threshValue;
     Point* uf_Find(Point*, Point**);
-    unsigned* uf_Find1D(unsigned*, unsigned*);
+    inline unsigned* uf_Find1D(unsigned*, unsigned*);
+    inline bool uf_CheckStub(unsigned*, unsigned*);
 public:
     SceneTextLocalizer();
     SceneTextLocalizer(Mat, int);
