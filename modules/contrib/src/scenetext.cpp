@@ -7,6 +7,7 @@
 #include <iostream>
 #include <stdlib.h>
 #include <limits.h>
+#include <sstream>
 
 using namespace cv;
 using namespace std;
@@ -69,7 +70,7 @@ namespace cv
     }
 
     void Region1D::Attach(Region1D* _extra, int _borderLength, int _p0y, int _hn)
-    {      
+    {
         if (start != _extra->start)
         {
             bounds |= _extra->bounds;
@@ -105,6 +106,39 @@ namespace cv
                 }
                 crossings[_p0y] -= 2 * _hn;
             }
+        }
+    }
+
+    void Region1D::AttachPoint(unsigned _p, int h, int w, int _borderLength, int _hn)
+    {
+        int px = _p % w;
+        int py = _p / w;
+        bounds |= Rect(px, py, 1, 1);
+        area++;
+        perimeter += 4 - 2 * _borderLength;
+        //euler += 0;
+
+        if ((bounds.height > SMALL_SIZE) || (bounds.y <= top_of_small) || (bounds.y + bounds.height >= top_of_small + SMALL_SIZE))
+        {
+            if (top_of_small != UINT_MAX)
+            {
+                crossings = new int[imageh];
+                memset(crossings, 0, imageh * 4);
+                memcpy(&crossings[top_of_small], &crossings_small[0], SMALL_SIZE * 4);
+
+                top_of_small = UINT_MAX;
+            }
+        }
+
+        if (top_of_small != UINT_MAX)
+        {
+            crossings_small[py - top_of_small] += 2;
+            crossings_small[py - top_of_small] -= 2 * _hn;
+        }
+        else
+        {
+            crossings[py] += 2;
+            crossings[py] -= 2 * _hn;
         }
     }
 
@@ -236,6 +270,24 @@ namespace cv
         }
     }
 
+    string Region1D::GetInfo()
+    {
+        stringstream ss;
+
+        int bx = bounds.x - 1;
+        int by = bounds.y - 1;
+        ss << "Area: " << area;
+        ss << " Bounding box (" << bx << ", " << by << ") + (" << bounds.width << ", " << bounds.height << ") ";
+        ss << "Perimeter: " << perimeter;
+        ss << " Euler number: " << euler;
+        ss << " Crossings: ";
+        for(int kk = bounds.y; kk < bounds.y + bounds.height; kk++)
+        {
+           ss << Crossings(kk) << " ";
+        }
+        return ss.str();
+    }
+
     int* Region1D::AllCrossings()
     {
         if (top_of_small != UINT_MAX)
@@ -252,7 +304,7 @@ namespace cv
     {
         if (top_of_small == UINT_MAX)
         {
-          delete[] crossings;
+            delete[] crossings;
         }
     }
 
@@ -496,7 +548,8 @@ namespace cv
                 parentsArray[p0] = UINT_MAX - 1;
                 ranksArray[p0] = 0;
 
-                regionsArray[p0] = new Region1D(p0, bwImage.rows, bwImage.cols);
+                // We don't create a new object for any point at start anymore
+                // regionsArray[p0] = new Region1D(p0, bwImage.rows, bwImage.cols);
                 proot_p = p0;
 
                 changed = false;
@@ -531,17 +584,11 @@ namespace cv
                 else if (qtemp == 1)
                 {
                     q10++;
-                    if (is_any_neighbor[0][0])
-                    {
-                        q3++;
-                    }
+                    q3 += is_any_neighbor[0][0];
                 }
                 else if (qtemp == 2)
                 {
-                    if (!is_any_neighbor[0][0]) // is_any_neighbor[1][1] == false
-                    {
-                        q30++;
-                    }
+                    q30 += !is_any_neighbor[0][0];
                     q2++;
                 }
                 else if (qtemp == 3)
@@ -560,17 +607,11 @@ namespace cv
                 else if (qtemp == 1)
                 {
                     q10++;
-                    if (is_any_neighbor[0][2])
-                    {
-                        q3++;
-                    }
+                    q3 += is_any_neighbor[0][2];
                 }
                 else if (qtemp == 2)
                 {
-                    if (is_any_neighbor[1][2] == is_any_neighbor[0][1])
-                    {
-                        q30++;
-                    }
+                    q30 += is_any_neighbor[1][2] == is_any_neighbor[0][1];
                     q2++;
                 }
                 else if (qtemp == 3)
@@ -593,17 +634,11 @@ namespace cv
                 else if (qtemp == 1)
                 {
                     q10++;
-                    if (is_any_neighbor[2][0])
-                    {
-                        q3++;
-                    }
+                    q3 += is_any_neighbor[2][0];
                 }
                 else if (qtemp == 2)
                 {
-                    if (is_any_neighbor[1][0] == is_any_neighbor[2][1])
-                    {
-                        q30++;
-                    }
+                    q30 += is_any_neighbor[1][0] == is_any_neighbor[2][1];
                     q2++;
                 }
                 else if (qtemp == 3)
@@ -622,17 +657,11 @@ namespace cv
                 else if (qtemp == 1)
                 {
                     q10++;
-                    if (is_any_neighbor[2][2])
-                    {
-                        q3++;
-                    }
+                    q3 += is_any_neighbor[2][2];
                 }
                 else if (qtemp == 2)
                 {
-                    if (!is_any_neighbor[2][2]) // is_any_neighbor[1][1] == false
-                    {
-                        q30++;
-                    }
+                    q30 += !is_any_neighbor[2][2];
                     q2++;
                 }
                 else if (qtemp == 3)
@@ -650,6 +679,8 @@ namespace cv
                 }
                 qtemp /= 4;
 
+                bool neighbors_tested = false;
+
                 for(di = 0; di < neighborsCount; di++)
                 {
                     x_new = p0 % bwImage.cols + dx[di];
@@ -664,6 +695,7 @@ namespace cv
 
                     if (changed)
                     {
+                        //regionsArray[proot_p] = new Region1D(p0, bwImage.rows, bwImage.cols);
                         proot_p = *uf_Find1D(&p0, parentsArray);
                     }
 
@@ -674,7 +706,7 @@ namespace cv
                     if ((parentsArray[p1] != UINT_MAX) && (p1root_p != proot_p))
                     {
                         // Entering here means that p1 belongs to some region since has a parent
-                        // Will now find root
+                        neighbors_tested = true;
 
                         // Need to union. Three cases: rank1>rank2, rank1<rank2, rank1=rank2
                         point_rank = ranksArray[p0];
@@ -714,13 +746,26 @@ namespace cv
                         if (point_rank < neighbor_rank)
                         {
                             parentsArray[proot_p] = p1root_p;
-                            regionsArray[p1root_p]->Attach(regionsArray[proot_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
-                            delete regionsArray[proot_p];
-                            regionsArray[proot_p] = NULL;
+                            if (regionsArray[proot_p] == NULL)
+                            {
+                                regionsArray[p1root_p]->AttachPoint(proot_p, bwImage.rows, bwImage.cols, neighborsInRegions, horizontalNeighbors);
+                            }
+                            else
+                            {
+                                regionsArray[p1root_p]->Attach(regionsArray[proot_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
+                                delete regionsArray[proot_p];
+                                regionsArray[proot_p] = NULL;
+                            }
+
                             changed = true;
                         }
                         else if (point_rank > neighbor_rank)
                         {
+                            if (regionsArray[proot_p] == NULL)
+                            {
+                                regionsArray[proot_p] = new Region1D(p0, bwImage.rows, bwImage.cols);
+                            }
+
                             parentsArray[p1root_p] = proot_p;
                             regionsArray[proot_p]->Attach(regionsArray[p1root_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
                             delete regionsArray[p1root_p];
@@ -728,6 +773,11 @@ namespace cv
                         }
                         else
                         {
+                            if (regionsArray[proot_p] == NULL)
+                            {
+                                regionsArray[proot_p] = new Region1D(p0, bwImage.rows, bwImage.cols);
+                            }
+
                             parentsArray[p1root_p] = proot_p;
                             ranksArray[proot_p]++;
                             regionsArray[proot_p]->Attach(regionsArray[p1root_p], neighborsInRegions, p0 / bwImage.cols, horizontalNeighbors);
@@ -740,6 +790,14 @@ namespace cv
                         // Neighbor not in region. Doing nothing
                     }
                 }
+
+                // None of neighbors belong to existing region, creating region of 1 point
+                if (!neighbors_tested)
+                {
+                    // Creating region here
+                    regionsArray[p0] = new Region1D(p0, bwImage.rows, bwImage.cols);
+                }
+
                 ptemp = *uf_Find1D(&p0, parentsArray);
                 regionsArray[ptemp]->CorrectEuler(qtemp);
             }

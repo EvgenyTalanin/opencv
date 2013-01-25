@@ -52,9 +52,11 @@ public:
     Region1D(unsigned, int, int);
     Region1D(unsigned, Rect, int, int, int, int*, int);
     void Attach(Region1D*, int, int, int);
+    void AttachPoint(unsigned, int, int, int, int);
     unsigned Start();
     inline int Crossings(int);
     int* AllCrossings();
+    string GetInfo();
 };
 
 struct RegionComp
