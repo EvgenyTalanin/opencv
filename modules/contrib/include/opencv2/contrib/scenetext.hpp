@@ -6,17 +6,24 @@ using namespace std;
 
 namespace cv
 {
-class RegionBase
+class Region
 {
-protected:
+private:
+    Point start;
     Rect bounds;
     int area;
     int perimeter;
     int euler;
     int imageh;
     int* crossings;
-
 public:
+    Region();
+    Region(Point, int);
+    Region(Point, Rect, int, int, int, int*, int);
+    ~Region();
+    void Attach(Region*, int, int, int);
+
+    Point Start();
     void CorrectEuler(int);
     Rect Bounds();
     int Area();
@@ -28,25 +35,18 @@ public:
     int BoundsArea();
 };
 
-class Region : public RegionBase
-{
-protected:
-    Point start;
-public:
-    Region();
-    Region(Point, int);
-    Region(Point, Rect, int, int, int, int*, int);
-    ~Region();
-    void Attach(Region*, int, int, int);
-    Point Start();
-};
-
-class Region1D : public Region
+class Region1D
 {
 private:
     unsigned start;
     unsigned top_of_small;
     int crossings_small[SMALL_SIZE];
+    Rect bounds;
+    int area;
+    int perimeter;
+    int euler;
+    int imageh;
+    int* crossings;
 public:
     ~Region1D();
     Region1D(unsigned, int, int);
@@ -56,7 +56,14 @@ public:
     unsigned Start();
     inline int Crossings(int);
     int* AllCrossings();
-    string GetInfo();
+
+    void CorrectEuler(int);
+    Rect Bounds();
+    int Area();
+    int Perimeter();
+    int Euler();
+    int CrossingsCount();
+    int BoundsArea();
 };
 
 struct RegionComp

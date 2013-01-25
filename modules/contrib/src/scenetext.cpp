@@ -14,6 +14,12 @@ using namespace std;
 
 namespace cv
 {
+    /////////////////////////////
+    //
+    // Region1D methods
+    //
+    /////////////////////////////
+
     Region::Region()
     {
 
@@ -67,6 +73,140 @@ namespace cv
             }
             crossings[_p0y] -= 2 * _hn;
         }
+    }
+
+    void Region::CorrectEuler(int _delta)
+    {
+        euler += _delta;
+    }
+
+    Rect Region::Bounds()
+    {
+        return bounds;
+    }
+
+    Point Region::Start()
+    {
+        return start;
+    }
+
+    int Region::Area()
+    {
+        return area;
+    }
+
+    int Region::Perimeter()
+    {
+        return perimeter;
+    }
+
+    int Region::Euler()
+    {
+        return euler;
+    }
+
+    int Region::Crossings(int _y)
+    {
+        return crossings[_y];
+    }
+
+    int* Region::AllCrossings()
+    {
+        return crossings;
+    }
+
+    int Region::CrossingsCount()
+    {
+        return imageh;
+    }
+
+    int Region::BoundsArea()
+    {
+        return bounds.width * bounds.height;
+    }
+
+    /////////////////////////////
+    //
+    // Region1D methods
+    //
+    /////////////////////////////
+
+    Region1D::Region1D(unsigned _p, int h, int w)
+    {
+        start = _p;
+        bounds.x = _p % w;
+        bounds.y = _p / w;
+        bounds.width = 1;
+        bounds.height = 1;
+        area = 1;
+        perimeter = 4;
+        euler = 0;
+        imageh = h;
+        crossings = NULL;
+
+        memset(&crossings_small[0], 0, SMALL_SIZE * 4);
+
+        top_of_small = bounds.y - SMALL_SIZE_MIDDLE;
+        if (bounds.y < SMALL_SIZE_MIDDLE)
+        {
+            top_of_small = 0;
+        }
+        if (top_of_small + SMALL_SIZE > imageh)
+        {
+            top_of_small = imageh - SMALL_SIZE;
+        }
+        crossings_small[bounds.y - top_of_small] = 2;
+    }
+
+    Region1D::Region1D(unsigned _s, Rect _b, int _a, int _p, int _e, int* _c, int h)
+    {
+        start = _s;
+        bounds = _b;
+        area = _a;
+        perimeter = _p;
+        euler = _e;
+        imageh = h;
+        crossings = new int[imageh + 1];
+        memset(crossings, 0, imageh * 4);
+        memcpy(crossings, _c, _b.height * 4);
+    }
+
+    Region1D::~Region1D()
+    {
+        if (top_of_small == UINT_MAX)
+        {
+            delete[] crossings;
+        }
+    }
+
+    unsigned Region1D::Start()
+    {
+        return start;
+    }
+
+    void Region1D::CorrectEuler(int _delta)
+    {
+        euler += _delta;
+    }
+
+    Rect Region1D::Bounds()
+    {
+        return bounds;
+    }
+
+    int Region1D::Area()
+    {
+        return area;
+    }
+
+    int Region1D::Perimeter()
+    {
+        return perimeter;
+    }
+
+    int Region1D::Euler()
+    {
+        return euler;
     }
 
     void Region1D::Attach(Region1D* _extra, int _borderLength, int _p0y, int _hn)
@@ -142,115 +282,6 @@ namespace cv
         }
     }
 
-    void RegionBase::CorrectEuler(int _delta)
-    {
-        euler += _delta;
-    }
-
-    Rect RegionBase::Bounds()
-    {
-        return bounds;
-    }
-
-    Point Region::Start()
-    {
-        return start;
-    }
-
-    unsigned Region1D::Start()
-    {
-        return start;
-    }
-
-    int RegionBase::Area()
-    {
-        return area;
-    }
-
-    int RegionBase::Perimeter()
-    {
-        return perimeter;
-    }
-
-    int RegionBase::Euler()
-    {
-        return euler;
-    }
-
-    int RegionBase::Crossings(int _y)
-    {
-        return crossings[_y];
-    }
-
-    int* RegionBase::AllCrossings()
-    {
-        return crossings;
-    }
-
-    int RegionBase::CrossingsCount()
-    {
-        return imageh;
-    }
-
-    int RegionBase::BoundsArea()
-    {
-        return bounds.width * bounds.height;
-    }
-
-    Point* SceneTextLocalizer::uf_Find(Point* _x, Point** _parents)
-    {
-        static Point stub = Point (-1, -1);
-        if (_parents[_x->x][_x->y].x == -1)
-        {
-            return &stub;
-        }
-        while(_parents[_x->x][_x->y] != *_x)
-        {
-            _x = &_parents[_x->x][_x->y];
-        }
-        return _x;
-    }
-
-    Region1D::Region1D(unsigned _p, int h, int w)
-    {
-        start = _p;
-        bounds.x = _p % w;
-        bounds.y = _p / w;
-        bounds.width = 1;
-        bounds.height = 1;
-        area = 1;
-        perimeter = 4;
-        euler = 0;
-        imageh = h;
-        crossings = NULL;
-
-        memset(&crossings_small[0], 0, SMALL_SIZE * 4);
-
-        top_of_small = bounds.y - SMALL_SIZE_MIDDLE;
-        if (bounds.y < SMALL_SIZE_MIDDLE)
-        {
-            top_of_small = 0;
-        }
-        if (top_of_small + SMALL_SIZE > imageh)
-        {
-            top_of_small = imageh - SMALL_SIZE;
-        }
-        crossings_small[bounds.y - top_of_small] = 2;
-    }
-
-    Region1D::Region1D(unsigned _s, Rect _b, int _a, int _p, int _e, int* _c, int h)
-    {
-        start = _s;
-        bounds = _b;
-        area = _a;
-        perimeter = _p;
-        euler = _e;
-        imageh = h;
-        crossings = new int[imageh + 1];
-        memset(crossings, 0, imageh * 4);
-        memcpy(crossings, _c, _b.height * 4);
-    }
-
     inline int Region1D::Crossings(int _y)
     {
         if (top_of_small != UINT_MAX)
@@ -270,24 +301,6 @@ namespace cv
         }
     }
 
-    string Region1D::GetInfo()
-    {
-        stringstream ss;
-
-        int bx = bounds.x - 1;
-        int by = bounds.y - 1;
-        ss << "Area: " << area;
-        ss << " Bounding box (" << bx << ", " << by << ") + (" << bounds.width << ", " << bounds.height << ") ";
-        ss << "Perimeter: " << perimeter;
-        ss << " Euler number: " << euler;
-        ss << " Crossings: ";
-        for(int kk = bounds.y; kk < bounds.y + bounds.height; kk++)
-        {
-           ss << Crossings(kk) << " ";
-        }
-        return ss.str();
-    }
-
     int* Region1D::AllCrossings()
     {
         if (top_of_small != UINT_MAX)
@@ -300,12 +313,35 @@ namespace cv
         return crossings;
     }
 
-    Region1D::~Region1D()
+    /////////////////////////////
+    //
+    // SceneTextLocalizer methods
+    //
+    /////////////////////////////
+
+    SceneTextLocalizer::SceneTextLocalizer()
     {
-        if (top_of_small == UINT_MAX)
+
+    }
+
+    SceneTextLocalizer::SceneTextLocalizer(Mat _image, int _thresh)
+    {
+        _originalImage = _image;
+        threshValue = _thresh;
+    }
+
+    Point* SceneTextLocalizer::uf_Find(Point* _x, Point** _parents)
+    {
+        static Point stub = Point (-1, -1);
+        if (_parents[_x->x][_x->y].x == -1)
         {
-            delete[] crossings;
+            return &stub;
         }
+        while(_parents[_x->x][_x->y] != *_x)
+        {
+            _x = &_parents[_x->x][_x->y];
+        }
+        return _x;
     }
 
     inline unsigned* SceneTextLocalizer::uf_Find1D(unsigned* _x, unsigned* _parents)
@@ -326,18 +362,6 @@ namespace cv
             _x = &_parents[*_x];
         }
         return _parents[*_x] != UINT_MAX;
-    }
-
-
-    SceneTextLocalizer::SceneTextLocalizer()
-    {
-
-    }
-
-    SceneTextLocalizer::SceneTextLocalizer(Mat _image, int _thresh)
-    {
-        _originalImage = _image;
-        threshValue = _thresh;
     }
 
     set<Region, RegionComp> SceneTextLocalizer::GroundTruth()
