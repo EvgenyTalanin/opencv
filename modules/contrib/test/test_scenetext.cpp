@@ -12,7 +12,7 @@ TEST(Contrib_Matas, regression)
     Mat im = imread(imgName);
 
     set<Region, RegionComp> t;
-    set<Region, RegionComp> m;
+    set<Region1D, Region1DComp> m;
 
     SceneTextLocalizer scl(im, 100);
     t = scl.GroundTruth();
@@ -20,16 +20,18 @@ TEST(Contrib_Matas, regression)
 
     EXPECT_EQ(t.size(), m.size());
 
-    for(set<Region, RegionComp>::iterator itt = t.begin(), itm = m.begin(); itt != t.end(); ++itt, ++itm)
+    set<Region, RegionComp>::iterator itt;
+    set<Region1D, Region1DComp>::iterator itm;
+
+    for(itt = t.begin(), itm = m.begin(); itt != t.end(); ++itt, ++itm)
     {
         Region rt = *itt;
-        Region rm = *itm;
+        Region1D rm = *itm;
 
         EXPECT_EQ(rt.Bounds(), rm.Bounds());
         EXPECT_EQ(rt.Area(), rm.Area());
         EXPECT_EQ(rt.Perimeter(), rm.Perimeter());
         EXPECT_EQ(rt.Euler(), rm.Euler());
-        EXPECT_EQ(rt.CrossingsCount(), rm.CrossingsCount());
 
         for(int i = rt.Bounds().y; i < rt.Bounds().y + rt.Bounds().height; i++)
         {

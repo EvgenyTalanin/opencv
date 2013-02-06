@@ -31,7 +31,6 @@ public:
     int Euler();
     int Crossings(int);
     int* AllCrossings();
-    int CrossingsCount();
     int BoundsArea();
 };
 
@@ -39,36 +38,73 @@ class Region1D
 {
 private:
     unsigned start;
-    unsigned top_of_small;
-    int crossings_small[SMALL_SIZE];
+    unsigned thresh;
     Rect bounds;
     int area;
     int perimeter;
     int euler;
     int imageh;
     int* crossings;
+    int top_of_small;
+    int crossings_small[SMALL_SIZE];
 public:
     ~Region1D();
-    Region1D(unsigned, int, int);
-    Region1D(unsigned, Rect, int, int, int, int*, int);
+    Region1D(unsigned, unsigned, int, int);
+    Region1D(unsigned, unsigned, Rect, int, int, int, int*, int);
     void Attach(Region1D*, int, int, int);
-    void AttachPoint(unsigned, int, int, int, int);
-    unsigned Start();
-    inline int Crossings(int);
-    int* AllCrossings();
+    void AttachPoint(unsigned, unsigned, int, int, int);
 
-    void CorrectEuler(int);
+    unsigned Start();
+    unsigned Threshold();
     Rect Bounds();
     int Area();
     int Perimeter();
     int Euler();
-    int CrossingsCount();
     int BoundsArea();
+
+    void CorrectEuler(int);
+
+    int TopOfSmall();
+    int* AllCrossings();
+    inline int Crossings(int _y)
+    {
+        if (crossings == NULL)
+        {
+            if ((_y >= bounds.y) && (_y <= bounds.y + bounds.height - 1))
+            {
+                return crossings_small[_y - top_of_small];
+            }
+            else
+            {
+                return 0;
+            }
+        }
+        else
+        {
+            return crossings[_y];
+        }
+    }
 };
 
 struct RegionComp
 {
     bool operator() (Region _one, Region _other)
+    {
+        if (_one.Bounds().x < _other.Bounds().x) return true;
+        if (_one.Bounds().x > _other.Bounds().x) return false;
+        if (_one.Bounds().y < _other.Bounds().y) return true;
+        if (_one.Bounds().y > _other.Bounds().y) return false;
+        if (_one.Area() < _other.Area()) return true;
+        if (_one.Area() > _other.Area()) return false;
+        if (_one.Perimeter() < _other.Perimeter()) return true;
+        if (_one.Perimeter() > _other.Perimeter()) return false;
+        return false;
+    }
+};
+
+struct Region1DComp
+{
+    bool operator() (Region1D _one, Region1D _other)
     {
         if (_one.Bounds().x < _other.Bounds().x) return true;
         if (_one.Bounds().x > _other.Bounds().x) return false;
@@ -94,7 +130,7 @@ public:
     SceneTextLocalizer();
     SceneTextLocalizer(Mat, int);
     set<Region, RegionComp> GroundTruth();
-    set<Region, RegionComp> MatasLike();
+    set<Region1D, Region1DComp> MatasLike();
 };
 
 }

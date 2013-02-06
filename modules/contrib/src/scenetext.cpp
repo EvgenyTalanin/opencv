@@ -51,7 +51,7 @@ namespace cv
         imageh = h;
         crossings = new int[imageh + 1];
         memset(crossings, 0, imageh * 4);
-        memcpy(crossings, _c, _b.height * 4);
+        memcpy(crossings, _c, imageh * 4);
     }
 
     Region::~Region()
@@ -115,11 +115,6 @@ namespace cv
         return crossings;
     }
 
-    int Region::CrossingsCount()
-    {
-        return imageh;
-    }
-
     int Region::BoundsArea()
     {
         return bounds.width * bounds.height;
@@ -131,9 +126,10 @@ namespace cv
     //
     /////////////////////////////
 
-    Region1D::Region1D(unsigned _p, int h, int w)
+    Region1D::Region1D(unsigned _p, unsigned _t, int h, int w)
     {
         start = _p;
+        thresh = _t;
         bounds.x = _p % w;
         bounds.y = _p / w;
         bounds.width = 1;
@@ -158,9 +154,10 @@ namespace cv
         crossings_small[bounds.y - top_of_small] = 2;
     }
 
-    Region1D::Region1D(unsigned _s, Rect _b, int _a, int _p, int _e, int* _c, int h)
+    Region1D::Region1D(unsigned _s, unsigned _t, Rect _b, int _a, int _p, int _e, int* _c, int h)
     {
         start = _s;
+        thresh = _t;
         bounds = _b;
         area = _a;
         perimeter = _p;
@@ -168,12 +165,12 @@ namespace cv
         imageh = h;
         crossings = new int[imageh + 1];
         memset(crossings, 0, imageh * 4);
-        memcpy(crossings, _c, _b.height * 4);
+        memcpy(crossings, _c, imageh * 4);
     }
 
     Region1D::~Region1D()
     {
-        if (top_of_small == UINT_MAX)
+        if (top_of_small == INT_MAX)
         {
             delete[] crossings;
         }
@@ -182,6 +179,11 @@ namespace cv
     unsigned Region1D::Start()
     {
         return start;
+    }
+
+    unsigned Region1D::Threshold()
+    {
+        return thresh;
     }
 
     void Region1D::CorrectEuler(int _delta)
@@ -213,6 +215,7 @@ namespace cv
     {
         if (start != _extra->start)
         {
+            thresh = thresh > _extra->thresh ? thresh : _extra->thresh;
             bounds |= _extra->bounds;
             area += _extra->area;
             perimeter += _extra->perimeter - 2 * _borderLength;
@@ -220,17 +223,17 @@ namespace cv
 
             if ((bounds.height > SMALL_SIZE) || (bounds.y <= top_of_small) || (bounds.y + bounds.height >= top_of_small + SMALL_SIZE))
             {
-                if (top_of_small != UINT_MAX)
+                if (top_of_small != INT_MAX)
                 {
                     crossings = new int[imageh];
                     memset(crossings, 0, imageh * 4);
                     memcpy(&crossings[top_of_small], &crossings_small[0], SMALL_SIZE * 4);
 
-                    top_of_small = UINT_MAX;
+                    top_of_small = INT_MAX;
                 }
             }
 
-            if (top_of_small != UINT_MAX)
+            if (top_of_small != INT_MAX)
             {
                 for(int i = bounds.y; i < bounds.y + bounds.height; i++)
                 {
@@ -249,28 +252,29 @@ namespace cv
         }
     }
 
-    void Region1D::AttachPoint(unsigned _p, int h, int w, int _borderLength, int _hn)
+    void Region1D::AttachPoint(unsigned _p, unsigned _t, int w, int _borderLength, int _hn)
     {
         int px = _p % w;
         int py = _p / w;
         bounds |= Rect(px, py, 1, 1);
+        thresh = _t;
         area++;
         perimeter += 4 - 2 * _borderLength;
         //euler += 0;
 
         if ((bounds.height > SMALL_SIZE) || (bounds.y <= top_of_small) || (bounds.y + bounds.height >= top_of_small + SMALL_SIZE))
         {
-            if (top_of_small != UINT_MAX)
+            if (top_of_small != INT_MAX)
             {
                 crossings = new int[imageh];
                 memset(crossings, 0, imageh * 4);
                 memcpy(&crossings[top_of_small], &crossings_small[0], SMALL_SIZE * 4);
 
-                top_of_small = UINT_MAX;
+                top_of_small = INT_MAX;
             }
         }
 
-        if (top_of_small != UINT_MAX)
+        if (top_of_small != INT_MAX)
         {
             crossings_small[py - top_of_small] += 2;
             crossings_small[py - top_of_small] -= 2 * _hn;
@@ -282,33 +286,19 @@ namespace cv
         }
     }
 
-    inline int Region1D::Crossings(int _y)
+    int Region1D::TopOfSmall()
     {
-        if (top_of_small != UINT_MAX)
-        {
-            if ((_y >= bounds.y) && (_y <= bounds.y + bounds.height - 1))
-            {
-                return crossings_small[_y - top_of_small];
-            }
-            else
-            {
-                return 0;
-            }
-        }
-        else
-        {
-            return crossings[_y];
-        }
+        return top_of_small;
     }
 
     int* Region1D::AllCrossings()
     {
-        if (top_of_small != UINT_MAX)
+        if (top_of_small != INT_MAX)
         {
             crossings = new int[imageh + 1];
             memset(crossings, 0, imageh * 4);
             memcpy(&crossings[top_of_small], &crossings_small[0], SMALL_SIZE * 4);
-            top_of_small = UINT_MAX;
+            top_of_small = INT_MAX;
         }
         return crossings;
     }
@@ -475,7 +465,7 @@ namespace cv
         return retval;
     }
 
-    set<Region, RegionComp> SceneTextLocalizer::MatasLike()
+    set<Region1D, Region1DComp> SceneTextLocalizer::MatasLike()
     {
         double t = (double)getTickCount();
 
@@ -772,7 +762,7 @@ namespace cv
                             parentsArray[proot_p] = p1root_p;
                             if (regionsArray[proot_p] == NULL)
                             {
-                                regionsArray[p1root_p]->AttachPoint(proot_p, bwImage.rows, bwImage.cols, neighborsInRegions, horizontalNeighbors);
+                                regionsArray[p1root_p]->AttachPoint(proot_p, thresh, bwImage.cols, neighborsInRegions, horizontalNeighbors);
                             }
                             else
                             {
@@ -787,7 +777,7 @@ namespace cv
                         {
                             if (regionsArray[proot_p] == NULL)
                             {
-                                regionsArray[proot_p] = new Region1D(p0, bwImage.rows, bwImage.cols);
+                                regionsArray[proot_p] = new Region1D(p0, thresh, bwImage.rows, bwImage.cols);
                             }
 
                             parentsArray[p1root_p] = proot_p;
@@ -799,7 +789,7 @@ namespace cv
                         {
                             if (regionsArray[proot_p] == NULL)
                             {
-                                regionsArray[proot_p] = new Region1D(p0, bwImage.rows, bwImage.cols);
+                                regionsArray[proot_p] = new Region1D(p0, thresh, bwImage.rows, bwImage.cols);
                             }
 
                             parentsArray[p1root_p] = proot_p;
@@ -819,7 +809,7 @@ namespace cv
                 if (!neighbors_tested)
                 {
                     // Creating region here
-                    regionsArray[p0] = new Region1D(p0, bwImage.rows, bwImage.cols);
+                    regionsArray[p0] = new Region1D(p0, thresh, bwImage.rows, bwImage.cols);
                 }
 
                 ptemp = *uf_Find1D(&p0, parentsArray);
@@ -829,7 +819,7 @@ namespace cv
 
         t = (double)getTickCount() - t;
 
-        set<Region, RegionComp> retval;
+        set<Region1D, Region1DComp> retval;
 
         int regionsCount = 0;
         for(i = 0; i < bwImage.cols * bwImage.rows; i++)
@@ -839,13 +829,14 @@ namespace cv
                 regionsCount++;
                 //rectangle(originalImage, regionsArray[i][j]->Bounds(), Scalar(0, 0, 0));
 
-                retval.insert(Region(Point(-1, -1),
-                                     Rect(regionsArray[i]->Bounds().x - 1, regionsArray[i]->Bounds().y - 1, regionsArray[i]->Bounds().width, regionsArray[i]->Bounds().height),
-                                     regionsArray[i]->Area(),
-                                     regionsArray[i]->Perimeter(),
-                                     regionsArray[i]->Euler(),
-                                     regionsArray[i]->AllCrossings(),
-                                     bwImage.rows));
+                retval.insert(Region1D(0,
+                                       regionsArray[i]->Threshold(),
+                                       Rect(regionsArray[i]->Bounds().x - 1, regionsArray[i]->Bounds().y - 1, regionsArray[i]->Bounds().width, regionsArray[i]->Bounds().height),
+                                       regionsArray[i]->Area(),
+                                       regionsArray[i]->Perimeter(),
+                                       regionsArray[i]->Euler(),
+                                       regionsArray[i]->AllCrossings(),
+                                       bwImage.rows));
 
 /*
                 cout << "New region: " << regionsCount << endl;
